@@ -16,8 +16,7 @@ func main() {
 
 	var err error
 	for {
-		timer1 := time.NewTimer(2 * time.Second)
-		<-timer1.C
+		time.Sleep(2 * time.Second)
 
 		_, err = git.Run("add", ".")
 		if err != nil {
