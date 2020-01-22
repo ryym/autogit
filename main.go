@@ -80,6 +80,7 @@ const (
 	STATUS_UNKNOWN StatusCode = iota
 	STATUS_ADDED
 	STATUS_MODIFIED
+	STATUS_DELETED
 )
 
 type GitStatus struct {
@@ -128,6 +129,8 @@ func NewGitStatusItem(rawCode, filename string) GitStatusItem {
 		code = STATUS_ADDED
 	case "M":
 		code = STATUS_MODIFIED
+	case "D":
+		code = STATUS_DELETED
 	}
 
 	filename = strings.TrimSpace(filename)
