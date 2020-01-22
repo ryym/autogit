@@ -34,13 +34,31 @@ func main() {
 		}
 
 		status := ParseGitStatus(rawStatus)
-		commitMsg := makeCommitMessage(status)
 
-		_, err = git.Run("commit", "-m", commitMsg)
+		// TODO: Check date.
+		// https://git-scm.com/docs/git-show#Documentation/git-show.txt---diff-filterACDMRTUXB82308203
+		showOutput, err := git.Run("show", "--name-status", "--pretty=format:")
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Print("C")
+
+		prevStatus := ParseGitShow(showOutput)
+		if status.Equals(&prevStatus) {
+			// If the changeset is same as the last commit, fixup to it.
+			_, err = git.Run("commit", "--amend", "-C", "HEAD")
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Print("F")
+		} else {
+			commitMsg := makeCommitMessage(status)
+			_, err = git.Run("commit", "-m", commitMsg)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Print("C")
+		}
+
 	}
 }
 
@@ -65,7 +83,37 @@ const (
 )
 
 type GitStatus struct {
-	Items []GitStatusItem
+	items []GitStatusItem
+}
+
+func NewGitStatus(items []GitStatusItem) GitStatus {
+	sort.Slice(items, func(ia, ib int) bool {
+		a := items[ia]
+		b := items[ib]
+		if a.Code != b.Code {
+			return a.Code < b.Code
+		}
+		return strings.Compare(a.Filename, b.Filename) == -1
+	})
+	return GitStatus{items}
+}
+
+func (gs *GitStatus) Items() []GitStatusItem {
+	return gs.items
+}
+
+func (gs *GitStatus) Equals(other *GitStatus) bool {
+	oItems := other.Items()
+	if len(gs.items) != len(oItems) {
+		return false
+	}
+
+	for i, l := range gs.items {
+		if !l.Equals(&oItems[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 type GitStatusItem struct {
@@ -91,6 +139,10 @@ func NewGitStatusItem(rawCode, filename string) GitStatusItem {
 	return GitStatusItem{code, filename}
 }
 
+func (gsi *GitStatusItem) Equals(other *GitStatusItem) bool {
+	return gsi.Code == other.Code && gsi.Filename == other.Filename
+}
+
 func ParseGitStatus(status string) GitStatus {
 	lines := strings.Split(status, "\n")
 
@@ -103,24 +155,13 @@ func ParseGitStatus(status string) GitStatus {
 		items[i] = NewGitStatusItem(parts[0], parts[1])
 	}
 
-	return GitStatus{items}
+	return NewGitStatus(items)
 }
 
 func makeCommitMessage(status GitStatus) string {
-	items := append([]GitStatusItem{}, status.Items...)
-
-	sort.Slice(items, func(ia, ib int) bool {
-		a := items[ia]
-		b := items[ib]
-		if a.Code != b.Code {
-			return a.Code < b.Code
-		}
-		return strings.Compare(a.Filename, b.Filename) == -1
-	})
-
 	msg := ""
 	var lastCode StatusCode = -1
-	for i, it := range items {
+	for i, it := range status.Items() {
 		if lastCode != it.Code {
 			if i > 0 {
 				msg += " , "
@@ -143,4 +184,20 @@ func makeCommitMessage(status GitStatus) string {
 	}
 
 	return msg
+}
+
+// Should we define a different type from GitStatus?
+func ParseGitShow(output string) GitStatus {
+	lines := strings.Split(output, "\n")
+
+	// Remove the empty last item.
+	lines = lines[0 : len(lines)-1]
+
+	items := make([]GitStatusItem, len(lines))
+	for i, l := range lines {
+		parts := strings.SplitN(l, "\t", 2)
+		items[i] = NewGitStatusItem(parts[0], parts[1])
+	}
+
+	return NewGitStatus(items)
 }
